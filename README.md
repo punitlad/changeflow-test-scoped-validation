@@ -3,7 +3,10 @@
 Validates a fourth idea that none of the other three test targets cover: **a specific PR-time
 validation flow for the API's own PRs vs. a human's**, not a different merge mechanism. The
 merge mechanism here is plain `CHANGEFLOW_MERGE_MODE=native_auto_merge` (already proven end-to-end
-in `../native-auto-merge/`) — what's actually under test is `ci.yml`.
+in `../native-auto-merge/`) — what's actually under test is `ci.yml`. **Validated end-to-end**:
+the API path (`#1`) ran the blast-radius guard and skipped the naming lint; a human PR with an
+invalid name (`#2`) failed the naming lint and was confirmed un-mergeable by the ruleset; a human
+PR with a valid name (`#3`) passed and merged normally.
 
 ## The idea
 
