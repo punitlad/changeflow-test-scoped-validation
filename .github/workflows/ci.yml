@@ -1,0 +1,55 @@
+# PR-time required check, context "validate" -- same ruleset requirement as base-repo and
+# native-auto-merge (PR + this status check, no required review). What's different about
+# this test target isn't the merge mechanism (it's plain native_auto_merge, already proven
+# elsewhere) -- it's that the STEPS inside this one job differ by github.actor: humans get a
+# naming-convention lint the API doesn't need (it already validates team names before opening
+# the PR), and the API's own PRs get a blast-radius guard a human reviewer doesn't need (a
+# human can eyeball an arbitrary diff; an automated credential should be constrained to touch
+# only what it's supposed to).
+#
+# Kept as ONE job with branching steps, not two conditional jobs. A required check that's
+# skipped via job-level `if:` never posts a status at all and permanently blocks whichever
+# path got excluded -- see the same warning in ruleset-bypass/workflow-gated's ci.yml. Steps
+# within a job can be skipped safely; the job itself always runs and always reports "validate".
+name: ci
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate teams.json is valid JSON
+        run: python3 -m json.tool teams.json > /dev/null
+
+      - name: "Naming convention lint (human path only)"
+        if: github.actor != 'my-changeflow-app[bot]'
+        run: |
+          python3 - <<'PY'
+          import json, re, sys
+          teams = json.load(open("teams.json")).get("teams", [])
+          bad = [t["team"] for t in teams if "team" in t and not re.fullmatch(r"[a-z0-9-]+", t["team"])]
+          if bad:
+              print(f"team names must be lowercase kebab-case, got: {bad}", file=sys.stderr)
+              sys.exit(1)
+          PY
+
+      - name: "Blast-radius guard (automated path only)"
+        if: github.actor == 'my-changeflow-app[bot]'
+        run: |
+          git fetch origin main --depth=50
+          changed=$(git diff --name-only origin/main...HEAD)
+          if [ "$changed" != "teams.json" ]; then
+            echo "automated PRs may only touch teams.json, got: $changed" >&2
+            exit 1
+          fi
+          added=$(git diff origin/main...HEAD -- teams.json | grep -c '^\+.*"team"' || true)
+          if [ "$added" -ne 1 ]; then
+            echo "expected exactly 1 added team entry in this automated PR, got $added" >&2
+            exit 1
+          fi
